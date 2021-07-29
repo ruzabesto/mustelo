@@ -27,6 +27,12 @@ class ConfigurationError(MusteloError):
     pass
 
 
+class AbortError(MusteloError):
+    def __init__(self, status, message=None):
+        self.status = status
+        self.message = message
+
+
 class QueryDict(object):
     def __init__(self, items):
         self.data = dict()
@@ -203,7 +209,7 @@ class Mustelo(object):
 
     @staticmethod
     def abort(status, message=None):
-        return Response(status=status, data=message)
+        raise AbortError(status=status, message=message)
 
     def _find_route(self, path):
         for route in self.routes:
@@ -230,7 +236,10 @@ class Mustelo(object):
             body=await self._read_request_body(receive),
         )
         values = route.extract_params(request, params)
-        resp = await route.handler(**values)
+        try:
+            resp = await route.handler(**values)
+        except AbortError as err:
+            return Response(status=err.status, data=err.message)
         if not isinstance(resp, Response):
             return Response(data=resp)
         return resp
