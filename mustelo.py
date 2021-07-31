@@ -198,10 +198,12 @@ class Mustelo(object):
     def route(self, path, method='GET'):
         return partial(self._add_route, path, method)
 
-    def get(self, path, method='GET'):
+    def get(self, path):
+        method='GET'
         return partial(self._add_route, path, method)
 
-    def post(self, path, method='POST'):
+    def post(self, path):
+        method='POST'
         return partial(self._add_route, path, method)
 
     def _add_route(self, path, method, handler):

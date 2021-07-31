@@ -11,12 +11,12 @@ async def index():
 
 @app.route("/static/{filename:path}")
 async def static(filename):
-    return app.abort(400)
+    app.abort(400)
 
-@app.route("/api/get/{object}/{id}")
+@app.get("/api/get/{object}/{id}")
 async def method(request, object, id):
     print(locals())
-    return app.abort(500)
+    app.abort(500)
 
 if __name__ == "__main__":
     app.run()
