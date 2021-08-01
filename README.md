@@ -19,6 +19,8 @@ if __name__ == "__main__":
     app.run()
 ```
 
+To run applicaiton with `app.run()` need to have installed "uvicorn".
+
 ### Routes
 
 Path variables defined by "{variable_name:variable_type}".
@@ -51,9 +53,6 @@ Supported types:
 * dict - transformed into json response (with tailing "\n" useful for streaming json data)
 * any other types - converted to string 
 
-```python
-
-```
 
 #### Response stream
 

@@ -291,9 +291,22 @@ class Mustelo(object):
         return bytes(body)
 
     def run(self, host="localhost", port=8888):
-        import ferret
-        print("Test server started at %s:%s" % (host, port))
-        ferret.run(host, port, self)
+        from uvicorn.main import main
+        args = list()
+        args.append("--host=%s" % host)
+        args.append("--port=%s" % port)
+        s = str(self)
+        ## some black magic to get instance name and file name
+        frame = inspect.currentframe().f_back
+        name = None
+        for k,v in frame.f_globals.items():
+            if str(v) == s:
+                f = frame.f_globals["__file__"]
+                name = f.split(".")[0] + ":" + k
+        if not name:
+            raise ConfigurationError("Looks like application object is not global. object=%s" % s)
+        args.append(name)
+        return main(args)
 
 
 
