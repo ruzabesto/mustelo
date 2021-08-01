@@ -15,8 +15,14 @@ async def static(filename):
 
 @app.get("/api/get/{object}/{id}")
 async def method(request, object, id):
-    print(locals())
-    app.abort(500)
+    return dict(method="get", object=object, id=id)
+
+@app.get("/gen")
+async def method(request):
+    def gen_response():
+        for x in range(100):
+            yield dict(obj="gen", value=x)
+    return app.response(gen_response())
 
 if __name__ == "__main__":
     app.run()

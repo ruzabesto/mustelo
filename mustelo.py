@@ -169,23 +169,20 @@ class Request(object):
 
 
 class Response(object):
+    _ERR1 = "async generator is not supported. handler=%s"
+
     def __init__(self, data=None, status=200, headers=None):
         self.data = data
         self.status = status
         self.headers = headers or {}
 
-    @property
-    def body(self):
-        if self.data is None:
-            return b''
-        elif isinstance(self.data, bytes):
-            return self.data
-        elif isinstance(self.data, str):
-            return self.data.encode()
-        elif isinstance(self.data, (dict, list)):
-            return json.dumps(self.data).encode()
+    def generator(self):
+        if inspect.isgenerator(self.data):
+            yield from self.data
+        elif inspect.isasyncgen(body):
+            raise ConfigurationError(self._ERR1 % self.data.__name__)
         else:
-            raise TypeError(type(self.data))
+            yield self.data
 
     def __repr__(self):
         return "Response%s" % self.__dict__
@@ -212,6 +209,10 @@ class Mustelo(object):
     @staticmethod
     def abort(status, message=None):
         raise AbortError(status=status, message=message)
+
+    @staticmethod
+    def response(data=None, status=200, headers=None):
+        return Response(data, status, headers)
 
     def _find_route(self, path):
         for route in self.routes:
@@ -246,6 +247,17 @@ class Mustelo(object):
             return Response(data=resp)
         return resp
 
+    def _encode_data(self, data):
+        if data is None:
+            return b''
+        elif isinstance(data, bytes):
+            return data
+        elif isinstance(data, (dict, list)):
+            return ("%s\n" % json.dumps(data)).encode()
+        else:
+            return str(data).encode()
+            
+
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             return
@@ -256,9 +268,16 @@ class Mustelo(object):
             'status': response.status,
             'headers': [(k.encode(), v.encode()) for k, v in response.headers.items()],
         })
+        for data in response.generator():
+            await send({
+                'type': 'http.response.body',
+                'body': self._encode_data(data),
+                'more_body': True
+            })
         await send({
             'type': 'http.response.body',
-            'body': response.body,
+            'body': b'',
+            'more_body': False
         })
 
     @staticmethod
