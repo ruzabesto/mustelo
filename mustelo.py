@@ -8,8 +8,10 @@ Copyright (c) 2021, Mike Vorozhbyanskiy.
 License: MIT (see LICENSE for details)
 """
 
+import os
 import re
 import json
+import mimetypes
 import inspect
 from functools import partial
 from urllib.parse import parse_qsl
@@ -31,6 +33,20 @@ class AbortError(MusteloError):
     def __init__(self, status, message=None):
         self.status = status
         self.message = message
+
+
+def gues_datatype(data):
+    if data:
+        if type(data) == dict:
+            return 'application/json; charset=UTF-8'
+    return 'text/html; charset=UTF-8'
+
+
+class HEADER(object):
+    content_type = 'Content-Type'
+    content_enc = 'Content-Encoding'
+    content_disp = 'Content-Disposition'
+    content_len = 'Content-Length'
 
 
 class QueryDict(object):
@@ -67,6 +83,32 @@ class HeaderDict(object):
     def __repr__(self):
         return "HeaderDict%s" % self.data
 
+
+class ResponseHeaders(object):
+    def __init__(self, items=None):
+        self.data = dict()
+        self.update(items)
+
+
+    def __getitem__(self, key):
+        return self.data.get(key.lower())
+
+    def __contains__(self, key):
+        return key.lower() in self.data
+
+    def __setitem__(self, key, val):
+        if val is not None:
+            self.data[key.lower()] = val
+        elif key in self.data:
+            del self.data[key]
+
+    def update(self, other):
+        if other:
+            for k, v in other.items():
+                self.__setitem__(k, v)
+
+    def items(self):
+        return self.data.items()
 
 class Route(object):
 
@@ -174,12 +216,15 @@ class Response(object):
     def __init__(self, data=None, status=200, headers=None):
         self.data = data
         self.status = status
-        self.headers = headers or {}
+        self.headers = ResponseHeaders()
+        # default headers 
+        self.headers['Content-Type'] = gues_datatype(self.data)
+        self.headers.update(headers)
 
     def generator(self):
         if inspect.isgenerator(self.data):
             yield from self.data
-        elif inspect.isasyncgen(body):
+        elif inspect.isasyncgen(self.data):
             raise ConfigurationError(self._ERR1 % self.data.__name__)
         else:
             yield self.data
@@ -262,18 +307,29 @@ class Mustelo(object):
         if scope['type'] != 'http':
             return
         response = await self._handle_request_(scope, receive)
+        header_sent = False
 
-        await send({
-            'type': 'http.response.start',
-            'status': response.status,
-            'headers': [(k.encode(), v.encode()) for k, v in response.headers.items()],
-        })
+        async def send_headers(data=None):
+            hdrs = response.headers
+            if HEADER.content_type not in hdrs and data is not None:
+                hdrs[HEADER.content_type] = gues_datatype(data)
+            await send({
+                'type': 'http.response.start',
+                'status': response.status,
+                'headers': [(k.encode(), str(v).encode()) for k, v in hdrs.items()],
+            })
+
         for data in response.generator():
+            if not header_sent:
+                await send_headers(data)
+                header_sent = True
             await send({
                 'type': 'http.response.body',
                 'body': self._encode_data(data),
                 'more_body': True
             })
+        if not header_sent:
+            await send_headers()
         await send({
             'type': 'http.response.body',
             'body': b'',
@@ -307,6 +363,32 @@ class Mustelo(object):
             raise ConfigurationError("Looks like application object is not global. object=%s" % s)
         args.append(name)
         return main(args)
+
+    def static_file(self, filepath, fileroot="", download=False):
+        absroot = os.path.abspath(fileroot)
+        filename = os.path.join(absroot, filepath.replace("/", os.path.sep))
+        if not os.path.abspath(filename).startswith(absroot):
+            self.abort(403, "Access denied")
+        if not os.path.exists(filename) or not os.path.isfile(filename):
+            self.abort(404, "File not found")
+        def read_file():
+            with open(filename, "rb") as file:
+                while True:
+                    data = file.read(16384)
+                    if not data:
+                        break
+                    yield data
+        mimetype, encoding = mimetypes.guess_type(filename)
+        stats = os.stat(filename)
+        headers = dict()
+        headers[HEADER.content_type] = mimetype
+        headers[HEADER.content_enc] = encoding
+        headers[HEADER.content_len] = stats.st_size
+        if download:
+            headers[HEADER.content_disp] = 'attachment; filename="%s"' % \
+                os.path.basename(filename)
+        return self.response(read_file(), headers = headers)
+
 
 
 

@@ -11,14 +11,14 @@ async def index():
 
 @app.route("/static/{filename:path}")
 async def static(filename):
-    app.abort(400)
+    return app.static_file(filename, "static")
 
 @app.get("/api/get/{object}/{id}")
 async def method(request, object, id):
     return dict(method="get", object=object, id=id)
 
 @app.get("/gen")
-async def method(request):
+async def method_gen(request):
     def gen_response():
         for x in range(100):
             yield dict(obj="gen", value=x)
