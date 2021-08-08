@@ -35,6 +35,9 @@ class AbortError(MusteloError):
         self.message = message
 
 
+class HandlerError(MusteloError):
+    pass
+
 def gues_datatype(data):
     if data:
         if type(data) == dict:
@@ -67,6 +70,15 @@ class QueryDict(object):
     def __repr__(self):
         return "QueryDict%s" % self.data
 
+    def __getattr__(self, key):
+        obj = self.data.get(key)
+        if type(obj) == list:
+            if len(obj) > 0:
+                return obj[0]
+        elif obj:
+            return obj
+        return None
+
 
 class HeaderDict(object):
     def __init__(self, items):
@@ -89,7 +101,6 @@ class ResponseHeaders(object):
         self.data = dict()
         self.update(items)
 
-
     def __getitem__(self, key):
         return self.data.get(key.lower())
 
@@ -110,6 +121,7 @@ class ResponseHeaders(object):
     def items(self):
         return self.data.items()
 
+
 class Route(object):
 
     _matcher = re.compile(r"\{([a-zA-Z]\w*):?([a-zA-Z]+)?\}")
@@ -120,11 +132,11 @@ class Route(object):
     _ERR4 = "Wrong paramenter type. Allowed types %s. route=%s, parameter=%s, type=%s"
 
     def __init__(self, path, method, handler):
-        self.prefix, self.params, self.checker = self._complie(path)
         self.path = path
         self.method = method
-        self.has_request_param = self._validate_handler(self.params, handler)
         self.handler = handler
+        self.prefix, self.params, self.checker = self._complie(path)
+        self.has_request_param = self._validate_handler(self.params, handler)
         print("init: %s" % (self))
 
     def __str__(self):
@@ -232,10 +244,37 @@ class Response(object):
     def __repr__(self):
         return "Response%s" % self.__dict__
 
+
+class MicroTemplate(object):
+    _ERR = "Template context must be dict. template: %s, context.type: %s"
+
+    def __init__(self, templates_root):
+        self.templates_root = templates_root
+
+    @staticmethod
+    def render(engine, template, ctx):
+        if type(ctx) is not dict:
+            HandlerError(self._ERR1 % (template, type(ctx)))
+        absroot = os.path.abspath(engine.templates_root)
+        filename = os.path.join(absroot, template.replace("/", os.path.sep))
+        if not os.path.abspath(filename).startswith(absroot):
+            self.abort(403, "Access denied")
+        if not os.path.exists(filename) or not os.path.isfile(filename):
+            self.abort(404, "File not found")
+        with open(filename, "rb") as file:
+            data = file.read()
+            if ctx:
+                return data % ctx
+            else:
+                return data
+
+
 class Mustelo(object):
-    def __init__(self):
+    def __init__(self, templates_root="templates"):
         self.routes = []
         self.listeners = {}
+        self._template_engine = MicroTemplate(templates_root)
+        self._template_render = MicroTemplate.render
 
     def route(self, path, method='GET'):
         return partial(self._add_route, path, method)
@@ -269,7 +308,7 @@ class Mustelo(object):
 
     async def _handle_request_(self, scope, receive):
         route, params = self._find_route(scope['path'])
-        print("route=%s, params=%s" % (route, params))
+        # print("route=%s, params=%s" % (route, params))
         if route is None:
             return Response(status=404)
 
@@ -374,7 +413,7 @@ class Mustelo(object):
         def read_file():
             with open(filename, "rb") as file:
                 while True:
-                    data = file.read(16384)
+                    data = file.read(1048576)
                     if not data:
                         break
                     yield data
@@ -389,6 +428,10 @@ class Mustelo(object):
                 os.path.basename(filename)
         return self.response(read_file(), headers = headers)
 
+    def template_engine(self, engine, renderfunc):
+        self._template_engine = engine
+        self._template_render = renderfunc
 
-
+    def render(self, template, ctx={}):
+        return self._template_render(self._template_engine, template, ctx)
 
