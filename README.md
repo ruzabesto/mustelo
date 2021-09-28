@@ -1,6 +1,10 @@
 # mustelo
 
-Mustelo (en:weasel) is a tiny ASGI web framework with no external depenedencies. Inspired by bottle.py
+Mustelo (en:weasel) is a tiny ASGI web framework with no hard external depenedencies. Inspired by bottle.py
+
+Only one optional dependency is "uvicorn", required to run server via
+``app.run()``.
+For running mustelo wit any other ASGI server, no other dependencies needed.
 
 ## Usage
 
